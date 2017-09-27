@@ -9,7 +9,7 @@ DESCRIPTION = 'Gatco-RestAPI is a `Gatco extension which facilitates the creatio
 LONG_DESCRIPTION = open(path.join(ROOT_DIR, 'README.rst')).read()
 VERSION = re.search(
     "__version__ = '([^']+)'",
-    open(path.join(ROOT_DIR, 'gatco', '__init__.py')).read()
+    open(path.join(ROOT_DIR, 'gatco_restapi', '__init__.py')).read()
 ).group(1)
 
 
