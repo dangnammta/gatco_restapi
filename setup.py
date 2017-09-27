@@ -14,7 +14,7 @@ VERSION = re.search(
 
 
 setup(
-    name='Gatco',
+    name='Gatco-RestAPI',
     version=VERSION,
     description=DESCRIPTION,
     long_description=LONG_DESCRIPTION,
