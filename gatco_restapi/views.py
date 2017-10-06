@@ -21,6 +21,8 @@ from sqlalchemy.orm.exc import MultipleResultsFound
 from sqlalchemy.orm.exc import NoResultFound
 from sqlalchemy.orm.query import Query
 
+from sqlalchemy import inspect
+
 
 
 from .helpers import count
@@ -162,11 +164,10 @@ def catch_integrity_errors(session):
                 return func(*args, **kw)
             # TODO should `sqlalchemy.exc.InvalidRequestError`s also be caught?
             except (DataError, IntegrityError, ProgrammingError) as exception:
-                with session() as sess:
-                    sess.rollback()
-                    #current_app.logger.exception(str(exception))
-                    #return dict(message=type(exception).__name__), 400
-                    return json({"message":type(exception).__name__}, status=400)
+                session.rollback()
+                #current_app.logger.exception(str(exception))
+                #return dict(message=type(exception).__name__), 400
+                return json({"message":type(exception).__name__}, status=400)
         return wrapped
     return decorator
 
@@ -394,12 +395,12 @@ class FunctionAPI(ModelView):
             #current_app.logger.exception(str(exception))
             return json(dict(message='Unable to decode data'), status=400)
         try:
-            with self.session() as sess:
-                result = evaluate_functions(sess, self.model,
-                                            data.get('functions', []))
-                if not result:
-                    return json({}, status=204)
-                return json(result, status=200)
+            
+            result = evaluate_functions(self.session, self.model,
+                                        data.get('functions', []))
+            if not result:
+                return json({}, status=204)
+            return json(result, status=200)
         except AttributeError as exception:
             #current_app.logger.exception(str(exception))
             message = 'No such field "{0}"'.format(exception.field)
@@ -507,93 +508,7 @@ class API(ModelView):
 
         return column
     
-    def _inst_to_dict(self, inst):
-        """Returns the dictionary representation of the specified instance.
-
-        This method respects the include and exclude columns specified in the
-        constructor of this class.
-
-        """
-        # create a placeholder for the relations of the returned models
-        relations = frozenset(get_relations(self.model))
-        # do not follow relations that will not be included in the response
-        if self.include_columns is not None:
-            cols = frozenset(self.include_columns)
-            rels = frozenset(self.include_relations)
-            relations &= (cols | rels)
-        elif self.exclude_columns is not None:
-            relations -= frozenset(self.exclude_columns)
-        deep = dict((r, {}) for r in relations)
-        return to_dict(inst, deep, exclude=self.exclude_columns,
-                       exclude_relations=self.exclude_relations,
-                       include=self.include_columns,
-                       include_relations=self.include_relations,
-                       include_methods=self.include_methods)
-
-    def _dict_to_inst(self, session, data):
-        """Returns an instance of the model with the specified attributes."""
-        # Check for any request parameter naming a column which does not exist
-        # on the current model.
-        for field in data:
-            if not has_field(self.model, field):
-                msg = "Model does not have field '{0}'".format(field)
-                raise ValidationError(msg)
-        
-        # Getting the list of relations that will be added later
-        cols = get_columns(self.model)
-        relations = get_relations(self.model)
-        
-        # Looking for what we're going to set on the model right now
-        colkeys = cols.keys()
-        paramkeys = data.keys()
-        props = set(colkeys).intersection(paramkeys).difference(relations)
-
-        # Special case: if there are any dates, convert the string form of the
-        # date into an instance of the Python ``datetime`` object.
-        data = strings_to_dates(self.model, data)
-
-        # Instantiate the model with the parameters.
-        modelargs = dict([(i, data[i]) for i in props])
-        instance = self.model(**modelargs)
-
-        # Handling relations, a single level is allowed
-        for col in set(relations).intersection(paramkeys):
-            submodel = get_related_model(self.model, col)
-
-            if type(data[col]) == list:
-                # model has several related objects
-                for subparams in data[col]:
-                    subinst = get_or_create(session, submodel,
-                                            subparams)
-                    try:
-                        getattr(instance, col).append(subinst)
-                    except AttributeError:
-                        attribute = getattr(instance, col)
-                        attribute[subinst.key] = subinst.value
-            else:
-                # model has single related object
-                subinst = get_or_create(session, submodel,
-                                        data[col])
-                setattr(instance, col, subinst)
-
-        return instance
-
-    def _instid_to_dict(self, session, instid):
-        """Returns the dictionary representation of the instance specified by
-        `instid`.
-
-        If no such instance of the model exists, this method aborts with a
-        :http:statuscode:`404`.
-
-        """
-        inst = get_by(session, self.model, instid, self.primary_key)
-        if inst is None:
-            return json({_STATUS: 404}, status=404)
-        return self._inst_to_dict(inst)
-    
-    
-    
-    def _add_to_relation(self, session, query, relationname, toadd=None):
+    def _add_to_relation(self, query, relationname, toadd=None):
         """Adds a new or existing related model to each model specified by
         `query`.
 
@@ -618,7 +533,7 @@ class API(ModelView):
         if isinstance(toadd, dict):
             toadd = [toadd]
         for dictionary in toadd or []:
-            subinst = get_or_create(session, submodel, dictionary)
+            subinst = get_or_create(self.session, submodel, dictionary)
             try:
                 for instance in query:
                     getattr(instance, relationname).append(subinst)
@@ -626,7 +541,7 @@ class API(ModelView):
                 #current_app.logger.exception(str(exception))
                 setattr(instance, relationname, subinst)
 
-    def _remove_from_relation(self, session, query, relationname, toremove=None):
+    def _remove_from_relation(self, query, relationname, toremove=None):
         """Removes a related model from each model specified by `query`.
 
         This function does not commit the changes made to the database. The
@@ -656,15 +571,15 @@ class API(ModelView):
         for dictionary in toremove or []:
             remove = dictionary.pop('__delete__', False)
             if 'id' in dictionary:
-                subinst = get_by(session, submodel, dictionary['id'])
+                subinst = get_by(self.session, submodel, dictionary['id'])
             else:
                 subinst = self.query(submodel).filter_by(**dictionary).first()
             for instance in query:
                 getattr(instance, relationname).remove(subinst)
             if remove:
-                session.delete(subinst)
+                self.session.delete(subinst)
 
-    def _set_on_relation(self, session, query, relationname, toset=None):
+    def _set_on_relation(self, query, relationname, toset=None):
         """Sets the value of the relation specified by `relationname` on each
         instance specified by `query` to have the new or existing related
         models specified by `toset`.
@@ -689,14 +604,14 @@ class API(ModelView):
         """
         submodel = get_related_model(self.model, relationname)
         if isinstance(toset, list):
-            value = [get_or_create(session, submodel, d) for d in toset]
+            value = [get_or_create(self.session, submodel, d) for d in toset]
         else:
-            value = get_or_create(session, submodel, toset)
+            value = get_or_create(self.session, submodel, toset)
         for instance in query:
             setattr(instance, relationname, value)
     
     # TODO change this to have more sensible arguments
-    def _update_relations(self, session, query, params):
+    def _update_relations(self, query, params):
         """Adds, removes, or sets models which are related to the model
         specified in the constructor of this class.
 
@@ -734,23 +649,23 @@ class API(ModelView):
         """
         relations = get_relations(self.model)
         tochange = frozenset(relations) & frozenset(params)
+        
         for columnname in tochange:
             # Check if 'add' or 'remove' is being used
             if (isinstance(params[columnname], dict)
                 and any(k in params[columnname] for k in ['add', 'remove'])):
-
+    
                 toadd = params[columnname].get('add', [])
                 toremove = params[columnname].get('remove', [])
-                self._add_to_relation(session, query, columnname, toadd=toadd)
-                self._remove_from_relation(session, query, columnname,
+                self._add_to_relation(query, columnname, toadd=toadd)
+                self._remove_from_relation(query, columnname,
                                            toremove=toremove)
             else:
                 toset = params[columnname]
-                self._set_on_relation(session, query, columnname, toset=toset)
-
+                self._set_on_relation(query, columnname, toset=toset)
         return tochange
     
-    def _handle_validation_exception(self, session, exception):
+    def _handle_validation_exception(self, exception):
         """Rolls back the session, extracts validation error messages, and
         returns a :func:`flask.jsonify` response with :http:statuscode:`400`
         containing the extracted validation error messages.
@@ -759,7 +674,7 @@ class API(ModelView):
         :meth:`sqlalchemy.orm.session.Session.rollback`*.
 
         """
-        session.rollback()
+        self.session.rollback()
         errors = extract_error_messages(exception) or \
             'Could not determine specific validation errors'
         return json(dict(validation_errors=errors), status=400)
@@ -779,7 +694,7 @@ class API(ModelView):
             results_per_page = self.results_per_page
         return min(results_per_page, self.max_results_per_page)
     
-    def _paginated(self, session, request, instances, deep):
+    def _paginated(self, request, instances, deep):
         """Returns a paginated JSONified response from the specified list of
         model instances.
 
@@ -805,7 +720,7 @@ class API(ModelView):
         if isinstance(instances, list):
             num_results = len(instances)
         else:
-            num_results = count(session, instances)
+            num_results = count(self.session, instances)
         results_per_page = self._compute_results_per_page(request)
         if results_per_page > 0:
             # get the page number (first page is page 1)
@@ -827,7 +742,94 @@ class API(ModelView):
         return dict(page=page_num, objects=objects, total_pages=total_pages,
                     num_results=num_results)
     
-    def _search(self, session, request):
+    
+    def _inst_to_dict(self, inst):
+        """Returns the dictionary representation of the specified instance.
+
+        This method respects the include and exclude columns specified in the
+        constructor of this class.
+
+        """
+        # create a placeholder for the relations of the returned models
+        relations = frozenset(get_relations(self.model))
+        # do not follow relations that will not be included in the response
+        if self.include_columns is not None:
+            cols = frozenset(self.include_columns)
+            rels = frozenset(self.include_relations)
+            relations &= (cols | rels)
+        elif self.exclude_columns is not None:
+            relations -= frozenset(self.exclude_columns)
+        deep = dict((r, {}) for r in relations)
+        return to_dict(inst, deep, exclude=self.exclude_columns,
+                       exclude_relations=self.exclude_relations,
+                       include=self.include_columns,
+                       include_relations=self.include_relations,
+                       include_methods=self.include_methods)
+
+    def _dict_to_inst(self, data):
+        """Returns an instance of the model with the specified attributes."""
+        # Check for any request parameter naming a column which does not exist
+        # on the current model.
+        for field in data:
+            if not has_field(self.model, field):
+                msg = "Model does not have field '{0}'".format(field)
+                raise ValidationError(msg)
+        
+        # Getting the list of relations that will be added later
+        cols = get_columns(self.model)
+        relations = get_relations(self.model)
+        
+        # Looking for what we're going to set on the model right now
+        colkeys = cols.keys()
+        paramkeys = data.keys()
+        props = set(colkeys).intersection(paramkeys).difference(relations)
+
+        # Special case: if there are any dates, convert the string form of the
+        # date into an instance of the Python ``datetime`` object.
+        data = strings_to_dates(self.model, data)
+
+        # Instantiate the model with the parameters.
+        modelargs = dict([(i, data[i]) for i in props])
+        instance = self.model(**modelargs)
+
+        # Handling relations, a single level is allowed
+        for col in set(relations).intersection(paramkeys):
+            submodel = get_related_model(self.model, col)
+
+            if type(data[col]) == list:
+                # model has several related objects
+                for subparams in data[col]:
+                    subinst = get_or_create(self.session, submodel,
+                                            subparams)
+                    try:
+                        getattr(instance, col).append(subinst)
+                    except AttributeError:
+                        attribute = getattr(instance, col)
+                        attribute[subinst.key] = subinst.value
+            else:
+                # model has single related object
+                subinst = get_or_create(self.session, submodel,
+                                        data[col])
+                setattr(instance, col, subinst)
+
+        return instance
+
+    def _instid_to_dict(self, instid):
+        """Returns the dictionary representation of the instance specified by
+        `instid`.
+
+        If no such instance of the model exists, this method aborts with a
+        :http:statuscode:`404`.
+
+        """
+        inst = get_by(self.session, self.model, instid, self.primary_key)
+        if inst is None:
+            return json({_STATUS: 404}, status=404)
+        return self._inst_to_dict(inst)
+    
+    
+    
+    def _search(self, request):
         try:
             search_params = json_loads(request.args.get('q', '{}'))
         except (TypeError, ValueError, OverflowError) as exception:
@@ -835,7 +837,7 @@ class API(ModelView):
             return json(dict(message='Unable to decode data'), status=400)
 
         for preprocess in self.preprocess['GET_MANY']:
-            preprocess(session=session,request=request,search_params=search_params, Model=self.model)
+            preprocess(request=request,search_params=search_params, Model=self.model)
 
         print("TODO: datatime in paramstring - gatco_restapi views line 1146")
         # resolve date-strings as required by the model
@@ -859,12 +861,12 @@ class API(ModelView):
                     result = strings_to_dates(query_model, to_convert)
                 except ValueError as exception:
                     #current_app.logger.exception(str(exception))
-                    return dict(message='Unable to construct query'), 400
+                    return json(dict(message='Unable to construct query'), status=400)
                 param['val'] = result.get(query_field)'''
                 
         # perform a filtered search
         try:
-            result = search(session, self.model, search_params)
+            result = search(self.session, self.model, search_params)
         except NoResultFound:
             return json(dict(message='No result found'), status=404)
         except MultipleResultsFound:
@@ -886,7 +888,7 @@ class API(ModelView):
         
         # for security purposes, don't transmit list as top-level JSON
         if isinstance(result, Query):
-            result = self._paginated(session, request, result, deep)
+            result = self._paginated(request, result, deep)
             # Create the Link header.
             #
             # TODO We are already calling self._compute_results_per_page() once
@@ -908,7 +910,7 @@ class API(ModelView):
             headers = dict(Location=url)
 
         for postprocess in self.postprocess['GET_MANY']:
-            postprocess(session=session, request=request, result=result, search_params=search_params, Model=self.model)
+            postprocess(request=request, result=result, search_params=search_params, Model=self.model)
 
         # HACK Provide the headers directly in the result dictionary, so that
         # the :func:`jsonpify` function has access to them. See the note there
@@ -933,56 +935,55 @@ class API(ModelView):
 
         """
         
-        with self.session() as sess:
-            if instid is None:
-                return self._search(sess, request)
-            for preprocess in self.preprocess['GET_SINGLE']:
-                temp_result = preprocess(session=sess,request=request, instance_id=instid, Model=self.model)
-                # Let the return value of the preprocess be the new value of
-                # instid, thereby allowing the preprocess to effectively specify
-                # which instance of the model to process on.
-                #
-                # We assume that if the preprocess returns None, it really just
-                # didn't return anything, which means we shouldn't overwrite the
-                # instid.
-                if temp_result is not None:
-                    instid = temp_result
-            # get the instance of the "main" model whose ID is instid
-            
-            instance = get_by(sess, self.model, instid, self.primary_key)
-            
-            if instance is None:
-                return json({_STATUS: 404},status=404)
-            # If no relation is requested, just return the instance. Otherwise,
-            # get the value of the relation specified by `relationname`.
-            if relationname is None:
-                result = self.serialize(instance)
+        if instid is None:
+            return self._search(request)
+        for preprocess in self.preprocess['GET_SINGLE']:
+            temp_result = preprocess(request=request, instance_id=instid, Model=self.model)
+            # Let the return value of the preprocess be the new value of
+            # instid, thereby allowing the preprocess to effectively specify
+            # which instance of the model to process on.
+            #
+            # We assume that if the preprocess returns None, it really just
+            # didn't return anything, which means we shouldn't overwrite the
+            # instid.
+            if temp_result is not None:
+                instid = temp_result
+        # get the instance of the "main" model whose ID is instid
+        
+        instance = get_by(self.session, self.model, instid, self.primary_key)
+        
+        if instance is None:
+            return json({_STATUS: 404},status=404)
+        # If no relation is requested, just return the instance. Otherwise,
+        # get the value of the relation specified by `relationname`.
+        if relationname is None:
+            result = self.serialize(instance)
+        else:
+            related_value = getattr(instance, relationname)
+            # create a placeholder for the relations of the returned models
+            related_model = get_related_model(self.model, relationname)
+            relations = frozenset(get_relations(related_model))
+            deep = dict((r, {}) for r in relations)
+            if relationinstid is not None:
+                related_value_instance = get_by(self.session, related_model,
+                                                relationinstid)
+                if related_value_instance is None:
+                    return json({_STATUS: 404},status=404)
+                result = to_dict(related_value_instance, deep)
             else:
-                related_value = getattr(instance, relationname)
-                # create a placeholder for the relations of the returned models
-                related_model = get_related_model(self.model, relationname)
-                relations = frozenset(get_relations(related_model))
-                deep = dict((r, {}) for r in relations)
-                if relationinstid is not None:
-                    related_value_instance = get_by(sess, related_model,
-                                                    relationinstid)
-                    if related_value_instance is None:
-                        return json({_STATUS: 404},status=404)
-                    result = to_dict(related_value_instance, deep)
+                # for security purposes, don't transmit list as top-level JSON
+                if is_like_list(instance, relationname):
+                    result = self._paginated(list(related_value), deep)
                 else:
-                    # for security purposes, don't transmit list as top-level JSON
-                    if is_like_list(instance, relationname):
-                        result = self._paginated(list(related_value), deep)
-                    else:
-                        result = to_dict(related_value, deep)
-            if result is None:
-                return json({_STATUS: 404},status=404)
-            for postprocess in self.postprocess['GET_SINGLE']:
-                postprocess(session=sess,request=request, result=result, Model=self.model)
-            return json(result,status=200)
-            #return result
+                    result = to_dict(related_value, deep)
+        if result is None:
+            return json({_STATUS: 404},status=404)
+        for postprocess in self.postprocess['GET_SINGLE']:
+            postprocess(request=request, result=result, Model=self.model)
+        return json(result,status=200)
+        #return result
     
-    def _delete_many(self, session, request):
+    def _delete_many(self, request):
         """Deletes multiple instances of the model.
 
         If search parameters are provided via the ``q`` query parameter, only
@@ -1001,7 +1002,7 @@ class API(ModelView):
             return json(dict(message='Unable to decode search query'), status=400)
 
         for preprocess in self.preprocess['DELETE_MANY']:
-            preprocess(session=session,request=request, search_params=search_params, Model=self.model)
+            preprocess(request=request, search_params=search_params, Model=self.model)
 
         # perform a filtered search
         try:
@@ -1013,7 +1014,7 @@ class API(ModelView):
             #     sqlalchemy.exc.InvalidRequestError: Can't call Query.delete()
             #     when order_by() has been called
             #
-            result = search(session, self.model, search_params,
+            result = search(self.session, self.model, search_params,
                             _ignore_order_by=True)
         except NoResultFound:
             return json(dict(message='No result found'), status=404)
@@ -1033,12 +1034,12 @@ class API(ModelView):
             # below.
             num_deleted = result.delete(synchronize_session=False)
         else:
-            session.delete(result)
+            self.session.delete(result)
             num_deleted = 1
-        session.commit()
+        self.session.commit()
         result = dict(num_deleted=num_deleted)
         for postprocess in self.postprocess['DELETE_MANY']:
-            postprocess(session=session, request=request, result=result, search_params=search_params, Model=self.model)
+            postprocess(request=request, result=result, search_params=search_params, Model=self.model)
         return (json(result, status=200)) if num_deleted > 0 else json({},status=404)
     
     async def delete(self, request, instid=None, relationname=None, relationinstid=None):
@@ -1060,42 +1061,42 @@ class API(ModelView):
            Added the `relationname` keyword argument.
 
         """
-        with self.session() as sess:
-            if instid is None:
-                # If no instance ID is provided, this request is an attempt to
-                # delete many instances of the model via a search with possible
-                # filters.
-                return self._delete_many(sess, request)
-            was_deleted = False
-            for preprocess in self.preprocess['DELETE_SINGLE']:
-                temp_result = preprocess(session=sess,request=request, instance_id=instid,
-                                           relation_name=relationname,
-                                           relation_instance_id=relationinstid, Model=self.model)
-                # See the note under the preprocess in the get() method.
-                if temp_result is not None:
-                    instid = temp_result
-            inst = get_by(sess, self.model, instid, self.primary_key)
-            if relationname:
-                # If the request is ``DELETE /api/person/1/computers``, error 400.
-                if not relationinstid:
-                    msg = ('Cannot DELETE entire "{0}"'
-                           ' relation').format(relationname)
-                    return json(dict(message=msg), status=400)
-                # Otherwise, get the related instance to delete.
-                relation = getattr(inst, relationname)
-                related_model = get_related_model(self.model, relationname)
-                relation_instance = get_by(sess, related_model,
-                                           relationinstid)
-                # Removes an object from the relation list.
-                relation.remove(relation_instance)
-                was_deleted = len(sess.dirty) > 0
-            elif inst is not None:
-                sess.delete(inst)
-                was_deleted = len(sess.deleted) > 0
-            sess.commit()
-            for postprocess in self.postprocess['DELETE_SINGLE']:
-                postprocess(session=sess, request=request, was_deleted=was_deleted, Model=self.model)
-            return json({},status=200) if was_deleted else json({},status=404)
+        
+        if instid is None:
+            # If no instance ID is provided, this request is an attempt to
+            # delete many instances of the model via a search with possible
+            # filters.
+            return self._delete_many(request)
+        was_deleted = False
+        for preprocess in self.preprocess['DELETE_SINGLE']:
+            temp_result = preprocess(request=request, instance_id=instid,
+                                       relation_name=relationname,
+                                       relation_instance_id=relationinstid, Model=self.model)
+            # See the note under the preprocess in the get() method.
+            if temp_result is not None:
+                instid = temp_result
+        inst = get_by(self.session, self.model, instid, self.primary_key)
+        if relationname:
+            # If the request is ``DELETE /api/person/1/computers``, error 400.
+            if not relationinstid:
+                msg = ('Cannot DELETE entire "{0}"'
+                       ' relation').format(relationname)
+                return json(dict(message=msg), status=400)
+            # Otherwise, get the related instance to delete.
+            relation = getattr(inst, relationname)
+            related_model = get_related_model(self.model, relationname)
+            relation_instance = get_by(self.session, related_model,
+                                       relationinstid)
+            # Removes an object from the relation list.
+            relation.remove(relation_instance)
+            was_deleted = len(self.session.dirty) > 0
+        elif inst is not None:
+            self.session.delete(inst)
+            was_deleted = len(self.session.deleted) > 0
+        self.session.commit()
+        for postprocess in self.postprocess['DELETE_SINGLE']:
+            postprocess(request=request, was_deleted=was_deleted, Model=self.model)
+        return json({},status=200) if was_deleted else json({},status=404)
 
     async def post(self, request):
         """Creates a new instance of a given model based on request data.
@@ -1145,43 +1146,42 @@ class API(ModelView):
             #current_app.logger.exception(str(exception))
             return json(dict(message='Unable to decode data'),status=400)
         
-        with self.session() as sess:
-            # apply any preprocess to the POST arguments
-            for preprocess in self.preprocess['POST']:
-                preprocess(session=sess, request=request, data=data, Model=self.model)
-    
-            try:
-                # Convert the dictionary representation into an instance of the
-                # model.
-                
-                instance = self.deserialize(sess, data)
-                # Add the created model to the session.
-                sess.add(instance)
-                sess.commit()
-                # Get the dictionary representation of the new instance as it
-                # appears in the database.
-                result = self.serialize(instance)
-            except self.validation_exceptions as exception:
-                return self._handle_validation_exception(sess, exception)
-            # Determine the value of the primary key for this instance and
-            # encode URL-encode it (in case it is a Unicode string).
-            pk_name = self.primary_key or primary_key_name(instance)
-            primary_key = result[pk_name]
-            try:
-                primary_key = str(primary_key)
-            except UnicodeEncodeError:
-                #primary_key = url_quote_plus(primary_key.encode('utf-8'))
-                print("TODO: url_quote_plus() implement in gatco_restapi views")
-                primary_key = primary_key.encode('utf-8')
-            # The URL at which a client can access the newly created instance
-            # of the model.
-            url = '{0}/{1}'.format(request.url, primary_key)
-            # Provide that URL in the Location header in the response.
-            headers = dict(Location=url)
-            for postprocess in self.postprocess['POST']:
-                postprocess(session=sess, request=request, result=result, Model=self.model)
-            #return result, 201, headers
-            return json(result,headers=headers, status=201)
+        # apply any preprocess to the POST arguments
+        for preprocess in self.preprocess['POST']:
+            preprocess(request=request, data=data, Model=self.model)
+
+        try:
+            # Convert the dictionary representation into an instance of the
+            # model.
+            
+            instance = self.deserialize(data)
+            # Add the created model to the session.
+            self.session.add(instance)
+            self.session.commit()
+            # Get the dictionary representation of the new instance as it
+            # appears in the database.
+            result = self.serialize(instance)
+        except self.validation_exceptions as exception:
+            return self._handle_validation_exception(exception)
+        # Determine the value of the primary key for this instance and
+        # encode URL-encode it (in case it is a Unicode string).
+        pk_name = self.primary_key or primary_key_name(instance)
+        primary_key = result[pk_name]
+        try:
+            primary_key = str(primary_key)
+        except UnicodeEncodeError:
+            #primary_key = url_quote_plus(primary_key.encode('utf-8'))
+            print("TODO: url_quote_plus() implement in gatco_restapi views")
+            primary_key = primary_key.encode('utf-8')
+        # The URL at which a client can access the newly created instance
+        # of the model.
+        url = '{0}/{1}'.format(request.url, primary_key)
+        # Provide that URL in the Location header in the response.
+        headers = dict(Location=url)
+        for postprocess in self.postprocess['POST']:
+            postprocess(request=request, result=result, Model=self.model)
+        #return result, 201, headers
+        return json(result,headers=headers, status=201)
     
     async def patch(self, request, instid=None, relationname=None, relationinstid=None):
         """Updates the instance specified by ``instid`` of the named model, or
@@ -1235,81 +1235,79 @@ class API(ModelView):
             return json(dict(message='Unable to decode data'),status=400)
 
         # Check if the request is to patch many instances of the current model.
-        with self.session() as sess:
-            patchmany = instid is None
-            # Perform any necessary preprocessing.
-            if patchmany:
-                # Get the search parameters; all other keys in the `data`
-                # dictionary indicate a change in the model's field.
-                search_params = data.pop('q', {})
-                for preprocess in self.preprocess['PATCH_MANY']:
-                    preprocess(session=sess, request=request, search_params=search_params, data=data, Model=self.model)
-            else:
-                for preprocess in self.preprocess['PATCH_SINGLE']:
-                    temp_result = preprocess(session=sess, request=request, instance_id=instid, data=data, Model=self.model)
-                    # See the note under the preprocess in the get() method.
-                    if temp_result is not None:
-                        instid = temp_result
-    
-            # Check for any request parameter naming a column which does not exist
-            # on the current model.
-            for field in data:
-                if not has_field(self.model, field):
-                    msg = "Model does not have field '{0}'".format(field)
-                    return json(dict(message=msg),status=400)
-    
-            if patchmany:
-                try:
-                    # create a SQLALchemy Query from the query parameter `q`
-                    query = create_query(sess, self.model, search_params)
-                except Exception as exception:
-                    #current_app.logger.exception(str(exception))
-                    return json(dict(message='Unable to construct query'),status=400)
-            else:
-                # create a SQLAlchemy Query which has exactly the specified row
-                query = query_by_primary_key(sess, self.model, instid,
-                                             self.primary_key)
-                if query.count() == 0:
-                    return json({_STATUS: 404}, status=404)
-                assert query.count() == 1, 'Multiple rows with same ID'
-    
+        
+        patchmany = instid is None
+        # Perform any necessary preprocessing.
+        if patchmany:
+            # Get the search parameters; all other keys in the `data`
+            # dictionary indicate a change in the model's field.
+            search_params = data.pop('q', {})
+            for preprocess in self.preprocess['PATCH_MANY']:
+                preprocess(request=request, search_params=search_params, data=data, Model=self.model)
+        else:
+            for preprocess in self.preprocess['PATCH_SINGLE']:
+                temp_result = preprocess(request=request, instance_id=instid, data=data, Model=self.model)
+                # See the note under the preprocess in the get() method.
+                if temp_result is not None:
+                    instid = temp_result
+
+        # Check for any request parameter naming a column which does not exist
+        # on the current model.
+        for field in data:
+            if not has_field(self.model, field):
+                msg = "Model does not have field '{0}'".format(field)
+                return json(dict(message=msg),status=400)
+
+        if patchmany:
             try:
-                relations = self._update_relations(sess, query, data)
-            except self.validation_exceptions as exception:
+                # create a SQLALchemy Query from the query parameter `q`
+                query = create_query(self.session, self.model, search_params)
+            except Exception as exception:
                 #current_app.logger.exception(str(exception))
-                return self._handle_validation_exception(sess, exception)
-            field_list = frozenset(data) ^ relations
-            data = dict((field, data[field]) for field in field_list)
-    
-            # Special case: if there are any dates, convert the string form of the
-            # date into an instance of the Python ``datetime`` object.
-            data = strings_to_dates(self.model, data)
-    
-            try:
-                # Let's update all instances present in the query
-                num_modified = 0
-                if data:
-                    for item in query.all():
-                        for field, value in data.items():
-                            setattr(item, field, value)
-                        num_modified += 1
-                sess.commit()
-            except self.validation_exceptions as exception:
-                #current_app.logger.exception(str(exception))
-                return self._handle_validation_exception(sess, exception)
-    
-            # Perform any necessary postprocessing.
-            if patchmany:
-                result = dict(num_modified=num_modified)
-                for postprocess in self.postprocess['PATCH_MANY']:
-                    postprocess(session=sess, request=request, query=query, result=result,
-                                  search_params=search_params, Model=self.model)
-            else:
-                result = self._instid_to_dict(sess,instid)
-                for postprocess in self.postprocess['PATCH_SINGLE']:
-                    postprocess(session=sess, request=request, result=result, Model=self.model)
-    
-            return json(result, status=200)
+                return json(dict(message='Unable to construct query'),status=400)
+        else:
+            # create a SQLAlchemy Query which has exactly the specified row
+            query = query_by_primary_key(self.session, self.model, instid,
+                                         self.primary_key)
+            if query.count() == 0:
+                return json({_STATUS: 404}, status=404)
+            assert query.count() == 1, 'Multiple rows with same ID'
+        try:
+            relations = self._update_relations(query, data)
+        except self.validation_exceptions as exception:
+            #current_app.logger.exception(str(exception))
+            return self._handle_validation_exception(exception)
+        field_list = frozenset(data) ^ relations
+        
+        data = dict((field, data[field]) for field in field_list)
+        # Special case: if there are any dates, convert the string form of the
+        # date into an instance of the Python ``datetime`` object.
+        data = strings_to_dates(self.model, data)
+        try:
+            # Let's update all instances present in the query
+            num_modified = 0
+            if data:
+                for item in query.all():
+                    for field, value in data.items():
+                        setattr(item, field, value)
+                    num_modified += 1
+            self.session.commit()
+        except self.validation_exceptions as exception:
+            #current_app.logger.exception(str(exception))
+            return self._handle_validation_exception(exception)
+
+        # Perform any necessary postprocessing.
+        if patchmany:
+            result = dict(num_modified=num_modified)
+            for postprocess in self.postprocess['PATCH_MANY']:
+                postprocess(request=request, query=query, result=result,
+                              search_params=search_params, Model=self.model)
+        else:
+            result = self._instid_to_dict(instid)
+            for postprocess in self.postprocess['PATCH_SINGLE']:
+                postprocess(request=request, result=result, Model=self.model)
+
+        return json(result, status=200)
 
     def put(self, *args, **kw):
         """Alias for :meth:`patch`."""

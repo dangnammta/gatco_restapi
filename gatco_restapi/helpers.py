@@ -516,6 +516,7 @@ def get_or_create(session, model, attrs):
     if not isinstance(attrs, dict):
         return attrs
     # Recurse into nested relationships
+    
     for rel in get_relations(model):
         if rel not in attrs:
             continue
@@ -525,6 +526,7 @@ def get_or_create(session, model, attrs):
         else:
             attrs[rel] = get_or_create(session, get_related_model(model, rel),
                                        attrs[rel])
+    
     # Find private key names
     pk_names = primary_key_names(model)
     attrs = strings_to_dates(model, attrs)
@@ -539,6 +541,8 @@ def get_or_create(session, model, attrs):
         # primary key values.
         instance = session_query(session, model).filter_by(**pk_values).first()
         if instance is not None:
+            for pk in pk_names:
+                del attrs[pk]
             assign_attributes(instance, **attrs)
             return instance
     # If some of the primary keys were missing, or the row wasn't found,
