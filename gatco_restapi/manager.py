@@ -258,6 +258,9 @@ class APIManager(object):
         app.extensions['restapi'] = RestlessInfo(session,
                                                   preprocess or {},
                                                   postprocess or {})
+        if app is not None:
+            self.app = app
+            
         # Now that this application has been initialized, create blueprints for
         # which API creation was deferred in :meth:`create_api`. This includes
         # all (args, kw) pairs for the key in :attr:`apis_to_create`
