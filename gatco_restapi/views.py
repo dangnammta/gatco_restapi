@@ -104,7 +104,7 @@ def _is_msie8or9(request):
             and request.user_agent.version is not None
             and request.user_agent.browser == 'msie'
             and (8, 0) <= version(request.user_agent) < (10, 0))
-    
+
 
 def create_link_string(request, page, last_page, per_page):
     """Returns a string representing the value of the ``Link`` header.
@@ -167,7 +167,7 @@ def catch_integrity_errors(session):
                 session.rollback()
                 #current_app.logger.exception(str(exception))
                 #return dict(message=type(exception).__name__), 400
-                return json({"message":type(exception).__name__}, status=400)
+                return json({"message":type(exception).__name__}, status=520)
         return wrapped
     return decorator
 
@@ -181,7 +181,7 @@ def set_headers(response, headers):
     """
     for key, value in headers.items():
         response.headers[key] = value
-        
+
 
 # This code is (lightly) adapted from the ``requests`` library, in the
 # ``requests.utils`` module. See <http://python-requests.org> for more
@@ -387,15 +387,15 @@ class FunctionAPI(ModelView):
 
         """
         if 'q' not in request.args or not request.args.get('q'):
-            return json(dict(message='Empty query parameter'), status=400)
+            return json(dict(message='Empty query parameter'), status=520)
         # if parsing JSON fails, return a 400 error in JSON format
         try:
             data = json.loads(str(request.args.get('q'))) or {}
         except (TypeError, ValueError, OverflowError) as exception:
             #current_app.logger.exception(str(exception))
-            return json(dict(message='Unable to decode data'), status=400)
+            return json(dict(message='Unable to decode data'), status=520)
         try:
-            
+
             result = evaluate_functions(self.session, self.model,
                                         data.get('functions', []))
             if not result:
@@ -404,18 +404,18 @@ class FunctionAPI(ModelView):
         except AttributeError as exception:
             #current_app.logger.exception(str(exception))
             message = 'No such field "{0}"'.format(exception.field)
-            return json(dict(message=message), status=400)
+            return json(dict(message=message), status=520)
         except OperationalError as exception:
             #current_app.logger.exception(str(exception))
             message = 'No such function "{0}"'.format(exception.function)
-            return json(dict(message=message), status=400)
+            return json(dict(message=message), status=520)
 
-    
+
 class API(ModelView):
     #: List of decorators applied to every method of this class.
     #decorators = ModelView.decorators + [catch_processing_exceptions]
     decorators = [catch_processing_exceptions]
-    
+
     def __init__(self, session, model, exclude_columns=None,
                  include_columns=None, include_methods=None,
                  validation_exceptions=None, results_per_page=10,
@@ -480,7 +480,7 @@ class API(ModelView):
         decorate = lambda name, f: setattr(self, name, f(getattr(self, name)))
         for method in ['get', 'post', 'patch', 'put', 'delete']:
             decorate(method, catch_integrity_errors(self.session))
-    
+
     def _get_column_name(self, column):
         """Retrieve a column name from a column attribute of SQLAlchemy
         model class, or a string.
@@ -507,7 +507,7 @@ class API(ModelView):
             return clause_element.key
 
         return column
-    
+
     def _add_to_relation(self, query, relationname, toadd=None):
         """Adds a new or existing related model to each model specified by
         `query`.
@@ -609,7 +609,7 @@ class API(ModelView):
             value = get_or_create(self.session, submodel, toset)
         for instance in query:
             setattr(instance, relationname, value)
-    
+
     # TODO change this to have more sensible arguments
     def _update_relations(self, query, params):
         """Adds, removes, or sets models which are related to the model
@@ -649,12 +649,12 @@ class API(ModelView):
         """
         relations = get_relations(self.model)
         tochange = frozenset(relations) & frozenset(params)
-        
+
         for columnname in tochange:
             # Check if 'add' or 'remove' is being used
             if (isinstance(params[columnname], dict)
                 and any(k in params[columnname] for k in ['add', 'remove'])):
-    
+
                 toadd = params[columnname].get('add', [])
                 toremove = params[columnname].get('remove', [])
                 self._add_to_relation(query, columnname, toadd=toadd)
@@ -664,7 +664,7 @@ class API(ModelView):
                 toset = params[columnname]
                 self._set_on_relation(query, columnname, toset=toset)
         return tochange
-    
+
     def _handle_validation_exception(self, exception):
         """Rolls back the session, extracts validation error messages, and
         returns a :func:`flask.jsonify` response with :http:statuscode:`400`
@@ -677,8 +677,8 @@ class API(ModelView):
         self.session.rollback()
         errors = extract_error_messages(exception) or \
             'Could not determine specific validation errors'
-        return json(dict(validation_errors=errors), status=400)
-    
+        return json(dict(validation_errors=errors), status=520)
+
     def _compute_results_per_page(self, request):
         """Helper function which returns the number of results per page based
         on the request argument ``results_per_page`` and the server
@@ -693,7 +693,7 @@ class API(ModelView):
         if results_per_page <= 0:
             results_per_page = self.results_per_page
         return min(results_per_page, self.max_results_per_page)
-    
+
     def _paginated(self, request, instances, deep):
         """Returns a paginated JSONified response from the specified list of
         model instances.
@@ -741,8 +741,8 @@ class API(ModelView):
                    for x in instances[start:end]]
         return dict(page=page_num, objects=objects, total_pages=total_pages,
                     num_results=num_results)
-    
-    
+
+
     def _inst_to_dict(self, inst):
         """Returns the dictionary representation of the specified instance.
 
@@ -774,11 +774,11 @@ class API(ModelView):
             if not has_field(self.model, field):
                 msg = "Model does not have field '{0}'".format(field)
                 raise ValidationError(msg)
-        
+
         # Getting the list of relations that will be added later
         cols = get_columns(self.model)
         relations = get_relations(self.model)
-        
+
         # Looking for what we're going to set on the model right now
         colkeys = cols.keys()
         paramkeys = data.keys()
@@ -824,17 +824,17 @@ class API(ModelView):
         """
         inst = get_by(self.session, self.model, instid, self.primary_key)
         if inst is None:
-            return json({_STATUS: 404}, status=404)
+            return json(dict(message='No result found'), status=520)
         return self._inst_to_dict(inst)
-    
-    
-    
+
+
+
     def _search(self, request):
         try:
             search_params = json_loads(request.args.get('q', '{}'))
         except (TypeError, ValueError, OverflowError) as exception:
             #current_app.logger.exception(str(exception))
-            return json(dict(message='Unable to decode data'), status=400)
+            return json(dict(message='Unable to decode data'), status=520)
 
         for preprocess in self.preprocess['GET_MANY']:
             preprocess(request=request,search_params=search_params, Model=self.model)
@@ -861,20 +861,20 @@ class API(ModelView):
                     result = strings_to_dates(query_model, to_convert)
                 except ValueError as exception:
                     #current_app.logger.exception(str(exception))
-                    return json(dict(message='Unable to construct query'), status=400)
+                    return json(dict(message='Unable to construct query'), status=520)
                 param['val'] = result.get(query_field)'''
-                
+
         # perform a filtered search
         try:
             result = search(self.session, self.model, search_params)
         except NoResultFound:
-            return json(dict(message='No result found'), status=404)
+            return json(dict(message='No result found'), status=520)
         except MultipleResultsFound:
-            return json(dict(message='Multiple results found'), status=400)
+            return json(dict(message='Multiple results found'), status=520)
         except Exception as exception:
             #current_app.logger.exception(str(exception))
-            return json(dict(message='Unable to construct query'), status=400)
-        
+            return json(dict(message='Unable to construct query'), status=520)
+
         # create a placeholder for the relations of the returned models
         relations = frozenset(get_relations(self.model))
         # do not follow relations that will not be included in the response
@@ -885,7 +885,7 @@ class API(ModelView):
         elif self.exclude_columns is not None:
             relations -= frozenset(self.exclude_columns)
         deep = dict((r, {}) for r in relations)
-        
+
         # for security purposes, don't transmit list as top-level JSON
         if isinstance(result, Query):
             result = self._paginated(request, result, deep)
@@ -919,7 +919,7 @@ class API(ModelView):
         #return result, 200, headers
         #return text("heheh")
         return json(result, headers=headers,status=200)
-    
+
     async def get(self, request, instid=None, relationname=None, relationinstid=None):
         """Returns a JSON representation of an instance of model with the
         specified name.
@@ -934,7 +934,7 @@ class API(ModelView):
         method responds with :http:status:`404`.
 
         """
-        
+
         if instid is None:
             return self._search(request)
         for preprocess in self.preprocess['GET_SINGLE']:
@@ -949,11 +949,11 @@ class API(ModelView):
             if temp_result is not None:
                 instid = temp_result
         # get the instance of the "main" model whose ID is instid
-        
+
         instance = get_by(self.session, self.model, instid, self.primary_key)
-        
+
         if instance is None:
-            return json({_STATUS: 404},status=404)
+            return json(dict(message='No result found'),status=520)
         # If no relation is requested, just return the instance. Otherwise,
         # get the value of the relation specified by `relationname`.
         if relationname is None:
@@ -968,7 +968,7 @@ class API(ModelView):
                 related_value_instance = get_by(self.session, related_model,
                                                 relationinstid)
                 if related_value_instance is None:
-                    return json({_STATUS: 404},status=404)
+                    return json(dict(message='No result found'),status=520)
                 result = to_dict(related_value_instance, deep)
             else:
                 # for security purposes, don't transmit list as top-level JSON
@@ -977,12 +977,12 @@ class API(ModelView):
                 else:
                     result = to_dict(related_value, deep)
         if result is None:
-            return json({_STATUS: 404},status=404)
+            return json(dict(message='No result found'),status=520)
         for postprocess in self.postprocess['GET_SINGLE']:
             postprocess(request=request, result=result, Model=self.model)
         return json(result,status=200)
         #return result
-    
+
     def _delete_many(self, request):
         """Deletes multiple instances of the model.
 
@@ -999,7 +999,7 @@ class API(ModelView):
             search_params = json_loads(request.args.get('q', '{}'))
         except (TypeError, ValueError, OverflowError) as exception:
             #current_app.logger.exception(str(exception))
-            return json(dict(message='Unable to decode search query'), status=400)
+            return json(dict(message='Unable to decode search query'), status=520)
 
         for preprocess in self.preprocess['DELETE_MANY']:
             preprocess(request=request, search_params=search_params, Model=self.model)
@@ -1017,12 +1017,12 @@ class API(ModelView):
             result = search(self.session, self.model, search_params,
                             _ignore_order_by=True)
         except NoResultFound:
-            return json(dict(message='No result found'), status=404)
+            return json(dict(message='No result found'), status=520)
         except MultipleResultsFound:
-            return json(dict(message='Multiple results found'), status=400)
+            return json(dict(message='Multiple results found'), status=520)
         except Exception as exception:
             #current_app.logger.exception(str(exception))
-            return json(dict(message='Unable to construct query'), status=400)
+            return json(dict(message='Unable to construct query'), status=520)
 
         # for security purposes, don't transmit list as top-level JSON
         if isinstance(result, Query):
@@ -1040,8 +1040,8 @@ class API(ModelView):
         result = dict(num_deleted=num_deleted)
         for postprocess in self.postprocess['DELETE_MANY']:
             postprocess(request=request, result=result, search_params=search_params, Model=self.model)
-        return (json(result, status=200)) if num_deleted > 0 else json({},status=404)
-    
+        return (json(result, status=200)) if num_deleted > 0 else json({},status=520)
+
     async def delete(self, request, instid=None, relationname=None, relationinstid=None):
         """Removes the specified instance of the model with the specified name
         from the database.
@@ -1061,7 +1061,7 @@ class API(ModelView):
            Added the `relationname` keyword argument.
 
         """
-        
+
         if instid is None:
             # If no instance ID is provided, this request is an attempt to
             # delete many instances of the model via a search with possible
@@ -1081,7 +1081,7 @@ class API(ModelView):
             if not relationinstid:
                 msg = ('Cannot DELETE entire "{0}"'
                        ' relation').format(relationname)
-                return json(dict(message=msg), status=400)
+                return json(dict(message=msg), status=520)
             # Otherwise, get the related instance to delete.
             relation = getattr(inst, relationname)
             related_model = get_related_model(self.model, relationname)
@@ -1096,7 +1096,7 @@ class API(ModelView):
         self.session.commit()
         for postprocess in self.postprocess['DELETE_SINGLE']:
             postprocess(request=request, was_deleted=was_deleted, Model=self.model)
-        return json({},status=200) if was_deleted else json({},status=404)
+        return json({},status=200) if was_deleted else json({},status=520)
 
     async def post(self, request):
         """Creates a new instance of a given model based on request data.
@@ -1120,23 +1120,23 @@ class API(ModelView):
         """
         content_type = request.headers.get('Content-Type', None)
         content_is_json = content_type.startswith('application/json')
-        
+
         #print(content_type)
         #is_msie = _is_msie8or9(request)
         # Request must have the Content-Type: application/json header, unless
         # the User-Agent string indicates that the client is Microsoft Internet
         # Explorer 8 or 9 (which has a fixed Content-Type of 'text/html'; see
         # issue #267).
-        
+
         if not content_is_json:
             msg = 'Request must have "Content-Type: application/json" header'
-            return json(dict(message=msg),status=415) 
-        
+            return json(dict(message=msg),status=520)
+
         # try to read the parameters for the model from the body of the request
         try:
             # HACK Requests made from Internet Explorer 8 or 9 don't have the
             # correct content type, so request.get_json() doesn't work.
-            
+
             #if is_msie:
             #    data = json.loads(request.get_data()) or {}
             #else:
@@ -1144,8 +1144,8 @@ class API(ModelView):
             data = request.json or {}
         except (ServerError, TypeError, ValueError, OverflowError) as exception:
             #current_app.logger.exception(str(exception))
-            return json(dict(message='Unable to decode data'),status=400)
-        
+            return json(dict(message='Unable to decode data'),status=520)
+
         # apply any preprocess to the POST arguments
         for preprocess in self.preprocess['POST']:
             preprocess(request=request, data=data, Model=self.model)
@@ -1153,7 +1153,7 @@ class API(ModelView):
         try:
             # Convert the dictionary representation into an instance of the
             # model.
-            
+
             instance = self.deserialize(data)
             # Add the created model to the session.
             self.session.add(instance)
@@ -1182,7 +1182,7 @@ class API(ModelView):
             postprocess(request=request, result=result, Model=self.model)
         #return result, 201, headers
         return json(result,headers=headers, status=201)
-    
+
     async def patch(self, request, instid=None, relationname=None, relationinstid=None):
         """Updates the instance specified by ``instid`` of the named model, or
         updates multiple instances if ``instid`` is ``None``.
@@ -1210,7 +1210,7 @@ class API(ModelView):
         """
         content_type = request.headers.get('Content-Type', None)
         content_is_json = content_type.startswith('application/json')
-        
+
         #is_msie = _is_msie8or9()
         # Request must have the Content-Type: application/json header, unless
         # the User-Agent string indicates that the client is Microsoft Internet
@@ -1218,7 +1218,7 @@ class API(ModelView):
         # issue #267).
         if not content_is_json:
             msg = 'Request must have "Content-Type: application/json" header'
-            return json(dict(message=msg),status=415) 
+            return json(dict(message=msg),status=520)
 
         # try to load the fields/values to update from the body of the request
         try:
@@ -1232,10 +1232,10 @@ class API(ModelView):
         except (ServerError, TypeError, ValueError, OverflowError) as exception:
             # this also happens when request.data is empty
             #current_app.logger.exception(str(exception))
-            return json(dict(message='Unable to decode data'),status=400)
+            return json(dict(message='Unable to decode data'),status=520)
 
         # Check if the request is to patch many instances of the current model.
-        
+
         patchmany = instid is None
         # Perform any necessary preprocessing.
         if patchmany:
@@ -1256,7 +1256,7 @@ class API(ModelView):
         for field in data:
             if not has_field(self.model, field):
                 msg = "Model does not have field '{0}'".format(field)
-                return json(dict(message=msg),status=400)
+                return json(dict(message=msg),status=520)
 
         if patchmany:
             try:
@@ -1264,13 +1264,13 @@ class API(ModelView):
                 query = create_query(self.session, self.model, search_params)
             except Exception as exception:
                 #current_app.logger.exception(str(exception))
-                return json(dict(message='Unable to construct query'),status=400)
+                return json(dict(message='Unable to construct query'),status=520)
         else:
             # create a SQLAlchemy Query which has exactly the specified row
             query = query_by_primary_key(self.session, self.model, instid,
                                          self.primary_key)
             if query.count() == 0:
-                return json({_STATUS: 404}, status=404)
+                return json(dict(message='No result found'), status=520)
             assert query.count() == 1, 'Multiple rows with same ID'
         try:
             relations = self._update_relations(query, data)
@@ -1278,7 +1278,7 @@ class API(ModelView):
             #current_app.logger.exception(str(exception))
             return self._handle_validation_exception(exception)
         field_list = frozenset(data) ^ relations
-        
+
         data = dict((field, data[field]) for field in field_list)
         # Special case: if there are any dates, convert the string form of the
         # date into an instance of the Python ``datetime`` object.
