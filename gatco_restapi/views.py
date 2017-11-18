@@ -1118,7 +1118,7 @@ class API(ModelView):
         single level of relationship data.
 
         """
-        content_type = request.headers.get('Content-Type', None)
+        content_type = request.headers.get('Content-Type', "")
         content_is_json = content_type.startswith('application/json')
 
         #print(content_type)
@@ -1208,7 +1208,7 @@ class API(ModelView):
            Added the `relationname` keyword argument.
 
         """
-        content_type = request.headers.get('Content-Type', None)
+        content_type = request.headers.get('Content-Type', "")
         content_is_json = content_type.startswith('application/json')
 
         #is_msie = _is_msie8or9()
