@@ -906,7 +906,7 @@ class API(ModelView):
                              include_methods=self.include_methods)
             # The URL at which a client can access the instance matching this
             # search query.
-            url = '{0}/{1}'.format(request.base_url, result[primary_key])
+            url = '{0}/{1}'.format(request.url, result[primary_key])
             headers = dict(Location=url)
 
         for postprocess in self.postprocess['GET_MANY']:
