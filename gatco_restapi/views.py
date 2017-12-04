@@ -75,9 +75,10 @@ class ProcessingException(GatcoException):
 
     """
     def __init__(self, message='', status_code=400, *args, **kwargs):
-        super(ProcessingException, self).__init__(*args, **kwargs)
-        self.status_code = status_code
-        self.message = message
+        pass
+        #super(ProcessingException, self).__init__(message, status_code, *args, **kwargs)
+        #self.status_code = status_code
+        #self.message = message
 
 
 class ValidationError(GatcoException):
