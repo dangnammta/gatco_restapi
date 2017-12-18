@@ -894,10 +894,10 @@ class API(ModelView):
             #
             # TODO We are already calling self._compute_results_per_page() once
             # in _paginated(); don't compute it again here.
-            page, last_page = result['page'], result['total_pages']
-            linkstring = create_link_string(request, page, last_page,
+            #page, last_page = result['page'], result['total_pages']
+            #linkstring = create_link_string(request, page, last_page,
                                             self._compute_results_per_page(request))
-            headers = dict(Link=linkstring)
+            #headers = dict(Link=linkstring)
         else:
             primary_key = self.primary_key or primary_key_name(result)
             result = to_dict(result, deep, exclude=self.exclude_columns,
@@ -907,8 +907,8 @@ class API(ModelView):
                              include_methods=self.include_methods)
             # The URL at which a client can access the instance matching this
             # search query.
-            url = '{0}/{1}'.format(request.url, result[primary_key])
-            headers = dict(Location=url)
+            #url = '{0}/{1}'.format(request.url, result[primary_key])
+            #headers = dict(Location=url)
 
         for postprocess in self.postprocess['GET_MANY']:
             postprocess(request=request, result=result, search_params=search_params, Model=self.model)
@@ -916,10 +916,9 @@ class API(ModelView):
         # HACK Provide the headers directly in the result dictionary, so that
         # the :func:`jsonpify` function has access to them. See the note there
         # for more information.
-        result[_HEADERS] = headers
+        #result[_HEADERS] = headers
         #return result, 200, headers
-        #return text("heheh")
-        return json(result, headers=headers,status=200)
+        return json(result, status=200)
 
     async def get(self, request, instid=None, relationname=None, relationinstid=None):
         """Returns a JSON representation of an instance of model with the
