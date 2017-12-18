@@ -896,7 +896,7 @@ class API(ModelView):
             # in _paginated(); don't compute it again here.
             #page, last_page = result['page'], result['total_pages']
             #linkstring = create_link_string(request, page, last_page,
-                                            self._compute_results_per_page(request))
+            #                                self._compute_results_per_page(request))
             #headers = dict(Link=linkstring)
         else:
             primary_key = self.primary_key or primary_key_name(result)
