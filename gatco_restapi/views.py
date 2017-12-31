@@ -809,9 +809,9 @@ class API(ModelView):
                         attribute[subinst.key] = subinst.value
             else:
                 # model has single related object
-                subinst = get_or_create(self.session, submodel,
-                                        data[col])
-                setattr(instance, col, subinst)
+                if data[col] is not None:
+                    subinst = get_or_create(self.session, submodel, data[col])
+                    setattr(instance, col, subinst)
 
         return instance
 
