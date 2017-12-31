@@ -74,11 +74,10 @@ class ProcessingException(GatcoException):
     JSON object in the body of the response to the client.
 
     """
-    def __init__(self, message='', status_code=400, *args, **kwargs):
-        pass
-        #super(ProcessingException, self).__init__(message, status_code, *args, **kwargs)
-        #self.status_code = status_code
-        #self.message = message
+    def __init__(self, message='', status_code=520):
+        super(ProcessingException, self).__init__(message, status_code)
+        self.status_code = status_code
+        self.message = message
 
 
 class ValidationError(GatcoException):
@@ -122,22 +121,6 @@ def create_link_string(request, page, last_page, per_page):
     linkstring += LINKTEMPLATE.format(request.url, last_page,
                                       per_page, 'last')
     return linkstring
-
-def catch_processing_exceptions(func):
-    """Decorator that catches :exc:`ProcessingException`s and subsequently
-    returns a JSON-ified error response.
-
-    """
-    @wraps(func)
-    def decorator(*args, **kw):
-        try:
-            return func(*args, **kw)
-        except ProcessingException as exception:
-            #current_app.logger.exception(str(exception))
-            status = exception.code
-            message = exception.description or str(exception)
-            return json({"message":message}, status=status)
-    return decorator
 
 def catch_integrity_errors(session):
     """Returns a decorator that catches database integrity errors.
@@ -415,7 +398,7 @@ class FunctionAPI(ModelView):
 class API(ModelView):
     #: List of decorators applied to every method of this class.
     #decorators = ModelView.decorators + [catch_processing_exceptions]
-    decorators = [catch_processing_exceptions]
+    #decorators = [catch_processing_exceptions]
 
     def __init__(self, session, model, exclude_columns=None,
                  include_columns=None, include_methods=None,
@@ -837,8 +820,12 @@ class API(ModelView):
             #current_app.logger.exception(str(exception))
             return json(dict(message='Unable to decode data'), status=520)
 
-        for preprocess in self.preprocess['GET_MANY']:
-            preprocess(request=request,search_params=search_params, Model=self.model)
+        try:
+            for preprocess in self.preprocess['GET_MANY']:
+                preprocess(request=request,search_params=search_params, Model=self.model)
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
+
 
         print("TODO: datatime in paramstring - gatco_restapi views line 1146")
         # resolve date-strings as required by the model
@@ -910,8 +897,11 @@ class API(ModelView):
             #url = '{0}/{1}'.format(request.url, result[primary_key])
             #headers = dict(Location=url)
 
-        for postprocess in self.postprocess['GET_MANY']:
-            postprocess(request=request, result=result, search_params=search_params, Model=self.model)
+        try:
+            for postprocess in self.postprocess['GET_MANY']:
+                postprocess(request=request, result=result, search_params=search_params, Model=self.model)
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
 
         # HACK Provide the headers directly in the result dictionary, so that
         # the :func:`jsonpify` function has access to them. See the note there
@@ -937,17 +927,22 @@ class API(ModelView):
 
         if instid is None:
             return self._search(request)
-        for preprocess in self.preprocess['GET_SINGLE']:
-            temp_result = preprocess(request=request, instance_id=instid, Model=self.model)
-            # Let the return value of the preprocess be the new value of
-            # instid, thereby allowing the preprocess to effectively specify
-            # which instance of the model to process on.
-            #
-            # We assume that if the preprocess returns None, it really just
-            # didn't return anything, which means we shouldn't overwrite the
-            # instid.
-            if temp_result is not None:
-                instid = temp_result
+
+        try:
+            for preprocess in self.preprocess['GET_SINGLE']:
+                temp_result = preprocess(request=request, instance_id=instid, Model=self.model)
+                # Let the return value of the preprocess be the new value of
+                # instid, thereby allowing the preprocess to effectively specify
+                # which instance of the model to process on.
+                #
+                # We assume that if the preprocess returns None, it really just
+                # didn't return anything, which means we shouldn't overwrite the
+                # instid.
+                if temp_result is not None:
+                    instid = temp_result
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
+
         # get the instance of the "main" model whose ID is instid
 
         instance = get_by(self.session, self.model, instid, self.primary_key)
@@ -978,8 +973,13 @@ class API(ModelView):
                     result = to_dict(related_value, deep)
         if result is None:
             return json(dict(message='No result found'),status=520)
-        for postprocess in self.postprocess['GET_SINGLE']:
-            postprocess(request=request, result=result, Model=self.model)
+
+        try:
+            for postprocess in self.postprocess['GET_SINGLE']:
+                postprocess(request=request, result=result, Model=self.model)
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
+
         return json(result,status=200)
         #return result
 
@@ -1001,8 +1001,11 @@ class API(ModelView):
             #current_app.logger.exception(str(exception))
             return json(dict(message='Unable to decode search query'), status=520)
 
-        for preprocess in self.preprocess['DELETE_MANY']:
-            preprocess(request=request, search_params=search_params, Model=self.model)
+        try:
+            for preprocess in self.preprocess['DELETE_MANY']:
+                preprocess(request=request, search_params=search_params, Model=self.model)
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
 
         # perform a filtered search
         try:
@@ -1038,8 +1041,13 @@ class API(ModelView):
             num_deleted = 1
         self.session.commit()
         result = dict(num_deleted=num_deleted)
-        for postprocess in self.postprocess['DELETE_MANY']:
-            postprocess(request=request, result=result, search_params=search_params, Model=self.model)
+
+        try:
+            for postprocess in self.postprocess['DELETE_MANY']:
+                postprocess(request=request, result=result, search_params=search_params, Model=self.model)
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
+
         return (json(result, status=200)) if num_deleted > 0 else json({},status=520)
 
     async def delete(self, request, instid=None, relationname=None, relationinstid=None):
@@ -1068,13 +1076,18 @@ class API(ModelView):
             # filters.
             return self._delete_many(request)
         was_deleted = False
-        for preprocess in self.preprocess['DELETE_SINGLE']:
-            temp_result = preprocess(request=request, instance_id=instid,
-                                       relation_name=relationname,
-                                       relation_instance_id=relationinstid, Model=self.model)
-            # See the note under the preprocess in the get() method.
-            if temp_result is not None:
-                instid = temp_result
+
+        try:
+            for preprocess in self.preprocess['DELETE_SINGLE']:
+                temp_result = preprocess(request=request, instance_id=instid,
+                                           relation_name=relationname,
+                                           relation_instance_id=relationinstid, Model=self.model)
+                # See the note under the preprocess in the get() method.
+                if temp_result is not None:
+                    instid = temp_result
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
+
         inst = get_by(self.session, self.model, instid, self.primary_key)
         if relationname:
             # If the request is ``DELETE /api/person/1/computers``, error 400.
@@ -1094,8 +1107,13 @@ class API(ModelView):
             self.session.delete(inst)
             was_deleted = len(self.session.deleted) > 0
         self.session.commit()
-        for postprocess in self.postprocess['DELETE_SINGLE']:
-            postprocess(request=request, was_deleted=was_deleted, Model=self.model)
+
+        try:
+            for postprocess in self.postprocess['DELETE_SINGLE']:
+                postprocess(request=request, was_deleted=was_deleted, Model=self.model)
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
+
         return json({},status=200) if was_deleted else json({},status=520)
 
     async def post(self, request):
@@ -1147,8 +1165,13 @@ class API(ModelView):
             return json(dict(message='Unable to decode data'),status=520)
 
         # apply any preprocess to the POST arguments
-        for preprocess in self.preprocess['POST']:
-            preprocess(request=request, data=data, Model=self.model)
+        try:
+            for preprocess in self.preprocess['POST']:
+                preprocess(request=request, data=data, Model=self.model)
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
+
+
 
         try:
             # Convert the dictionary representation into an instance of the
@@ -1178,12 +1201,17 @@ class API(ModelView):
         url = '{0}/{1}'.format(request.url, primary_key)
         # Provide that URL in the Location header in the response.
         headers = dict(Location=url)
-        for postprocess in self.postprocess['POST']:
-            postprocess(request=request, result=result, Model=self.model)
+
+        try:
+            for postprocess in self.postprocess['POST']:
+                postprocess(request=request, result=result, Model=self.model)
+        except ProcessingException as exception:
+            return json({"error_message":exception.message}, status=exception.status_code)
+
         #return result, 201, headers
         return json(result,headers=headers, status=201)
 
-    async def patch(self, request, instid=None, relationname=None, relationinstid=None):
+    async def put(self, request, instid=None, relationname=None, relationinstid=None):
         """Updates the instance specified by ``instid`` of the named model, or
         updates multiple instances if ``instid`` is ``None``.
 
@@ -1242,14 +1270,22 @@ class API(ModelView):
             # Get the search parameters; all other keys in the `data`
             # dictionary indicate a change in the model's field.
             search_params = data.pop('q', {})
-            for preprocess in self.preprocess['PATCH_MANY']:
-                preprocess(request=request, search_params=search_params, data=data, Model=self.model)
+            try:
+                for preprocess in self.preprocess['PATCH_MANY']:
+                    preprocess(request=request, search_params=search_params, data=data, Model=self.model)
+            except ProcessingException as exception:
+                return json({"error_message":exception.message}, status=exception.status_code)
+
         else:
             for preprocess in self.preprocess['PATCH_SINGLE']:
-                temp_result = preprocess(request=request, instance_id=instid, data=data, Model=self.model)
-                # See the note under the preprocess in the get() method.
-                if temp_result is not None:
-                    instid = temp_result
+                try:
+                    temp_result = preprocess(request=request, instance_id=instid, data=data, Model=self.model)
+                    # See the note under the preprocess in the get() method.
+                    if temp_result is not None:
+                        instid = temp_result
+                except ProcessingException as exception:
+                    return json({"error_message":exception.message}, status=exception.status_code)
+
 
         # Check for any request parameter naming a column which does not exist
         # on the current model.
@@ -1299,16 +1335,25 @@ class API(ModelView):
         # Perform any necessary postprocessing.
         if patchmany:
             result = dict(num_modified=num_modified)
-            for postprocess in self.postprocess['PATCH_MANY']:
-                postprocess(request=request, query=query, result=result,
+
+            try:
+                for postprocess in self.postprocess['PATCH_MANY']:
+                    postprocess(request=request, query=query, result=result,
                               search_params=search_params, Model=self.model)
+            except ProcessingException as exception:
+                return json({"error_message":exception.message}, status=exception.status_code)
+
         else:
             result = self._instid_to_dict(instid)
-            for postprocess in self.postprocess['PATCH_SINGLE']:
-                postprocess(request=request, result=result, Model=self.model)
+
+            try:
+                for postprocess in self.postprocess['PATCH_SINGLE']:
+                    postprocess(request=request, result=result, Model=self.model)
+            except ProcessingException as exception:
+                return json({"error_message":exception.message}, status=exception.status_code)
 
         return json(result, status=200)
 
-    def put(self, *args, **kw):
+    async def patch(self, *args, **kw):
         """Alias for :meth:`patch`."""
-        return self.patch(*args, **kw)
+        return self.put(*args, **kw)
