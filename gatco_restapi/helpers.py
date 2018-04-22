@@ -199,18 +199,18 @@ def is_interval_field(model, fieldname):
     return isinstance(fieldtype, Interval)
 
 
-def assign_attributes(model, **kwargs):
+def assign_attributes(gatco_restapi_model, **kwargs):
     """Assign all attributes from the supplied `kwargs` dictionary to the
     model. This does the same thing as the default declarative constructor,
     when provided a dictionary of attributes and values.
 
     """
-    cls = type(model)
+    cls = type(gatco_restapi_model)
     for field, value in kwargs.items():
         if not hasattr(cls, field):
             msg = '{0} has no field named "{1!r}"'.format(cls.__name__, field)
             raise TypeError(msg)
-        setattr(model, field, value)
+        setattr(gatco_restapi_model, field, value)
 
 
 def primary_key_names(model):
