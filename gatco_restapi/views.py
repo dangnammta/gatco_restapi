@@ -79,6 +79,12 @@ class ProcessingException(GatcoException):
         self.status_code = status_code
         self.message = message
 
+def response_exception(exception):
+    if type(exception.message) is dict:
+        return json(exception.message, status=exception.status_code)
+    else:
+        return text(exception.message, status=exception.status_code)
+
 
 class ValidationError(GatcoException):
     """Raised when there is a problem deserializing a dictionary into an
@@ -824,7 +830,7 @@ class API(ModelView):
             for preprocess in self.preprocess['GET_MANY']:
                 preprocess(request=request,search_params=search_params, Model=self.model)
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
 
         print("TODO: datatime in paramstring - gatco_restapi views line 1146")
@@ -901,7 +907,7 @@ class API(ModelView):
             for postprocess in self.postprocess['GET_MANY']:
                 postprocess(request=request, result=result, search_params=search_params, Model=self.model)
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
         # HACK Provide the headers directly in the result dictionary, so that
         # the :func:`jsonpify` function has access to them. See the note there
@@ -941,7 +947,7 @@ class API(ModelView):
                 if temp_result is not None:
                     instid = temp_result
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
         # get the instance of the "main" model whose ID is instid
 
@@ -978,7 +984,7 @@ class API(ModelView):
             for postprocess in self.postprocess['GET_SINGLE']:
                 postprocess(request=request, result=result, Model=self.model)
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
         return json(result,status=200)
         #return result
@@ -1005,7 +1011,7 @@ class API(ModelView):
             for preprocess in self.preprocess['DELETE_MANY']:
                 preprocess(request=request, search_params=search_params, Model=self.model)
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
         # perform a filtered search
         try:
@@ -1046,7 +1052,7 @@ class API(ModelView):
             for postprocess in self.postprocess['DELETE_MANY']:
                 postprocess(request=request, result=result, search_params=search_params, Model=self.model)
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
         return (json(result, status=200)) if num_deleted > 0 else json({},status=520)
 
@@ -1086,7 +1092,7 @@ class API(ModelView):
                 if temp_result is not None:
                     instid = temp_result
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
         inst = get_by(self.session, self.model, instid, self.primary_key)
         if relationname:
@@ -1112,7 +1118,7 @@ class API(ModelView):
             for postprocess in self.postprocess['DELETE_SINGLE']:
                 postprocess(request=request, was_deleted=was_deleted, Model=self.model)
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
         return json({},status=200) if was_deleted else json({},status=520)
 
@@ -1169,7 +1175,7 @@ class API(ModelView):
             for preprocess in self.preprocess['POST']:
                 preprocess(request=request, data=data, Model=self.model)
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
 
 
@@ -1206,7 +1212,7 @@ class API(ModelView):
             for postprocess in self.postprocess['POST']:
                 postprocess(request=request, result=result, Model=self.model)
         except ProcessingException as exception:
-            return json({"error_message":exception.message}, status=exception.status_code)
+            return response_exception(exception)
 
         #return result, 201, headers
         return json(result,headers=headers, status=201)
@@ -1274,7 +1280,7 @@ class API(ModelView):
                 for preprocess in self.preprocess['PATCH_MANY']:
                     preprocess(request=request, search_params=search_params, data=data, Model=self.model)
             except ProcessingException as exception:
-                return json({"error_message":exception.message}, status=exception.status_code)
+                return response_exception(exception)
 
         else:
             for preprocess in self.preprocess['PATCH_SINGLE']:
@@ -1284,7 +1290,7 @@ class API(ModelView):
                     if temp_result is not None:
                         instid = temp_result
                 except ProcessingException as exception:
-                    return json({"error_message":exception.message}, status=exception.status_code)
+                    return response_exception(exception)
 
 
         # Check for any request parameter naming a column which does not exist
@@ -1341,7 +1347,7 @@ class API(ModelView):
                     postprocess(request=request, query=query, result=result,
                               search_params=search_params, Model=self.model)
             except ProcessingException as exception:
-                return json({"error_message":exception.message}, status=exception.status_code)
+                return response_exception(exception)
 
         else:
             result = self._instid_to_dict(instid)
@@ -1350,7 +1356,7 @@ class API(ModelView):
                 for postprocess in self.postprocess['PATCH_SINGLE']:
                     postprocess(request=request, result=result, Model=self.model)
             except ProcessingException as exception:
-                return json({"error_message":exception.message}, status=exception.status_code)
+                return response_exception(exception)
 
         return json(result, status=200)
 
