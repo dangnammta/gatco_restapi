@@ -6,7 +6,7 @@ import math
 import warnings
 
 from gatco.exceptions import GatcoException, ServerError
-from gatco.response import json, text
+from gatco.response import json, text, HTTPResponse
 from gatco.request import json_loads
 from gatco.views import HTTPMethodView
 
@@ -828,7 +828,9 @@ class API(ModelView):
 
         try:
             for preprocess in self.preprocess['GET_MANY']:
-                preprocess(request=request,search_params=search_params, Model=self.model)
+                resp = preprocess(request=request,search_params=search_params, Model=self.model)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
         except ProcessingException as exception:
             return response_exception(exception)
 
@@ -904,8 +906,11 @@ class API(ModelView):
             #headers = dict(Location=url)
 
         try:
+            headers = {}
             for postprocess in self.postprocess['GET_MANY']:
-                postprocess(request=request, result=result, search_params=search_params, Model=self.model)
+                resp = postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
         except ProcessingException as exception:
             return response_exception(exception)
 
@@ -914,7 +919,7 @@ class API(ModelView):
         # for more information.
         #result[_HEADERS] = headers
         #return result, 200, headers
-        return json(result, status=200)
+        return json(result, headers=headers, status=200)
 
     async def get(self, request, instid=None, relationname=None, relationinstid=None):
         """Returns a JSON representation of an instance of model with the
@@ -936,7 +941,7 @@ class API(ModelView):
 
         try:
             for preprocess in self.preprocess['GET_SINGLE']:
-                temp_result = preprocess(request=request, instance_id=instid, Model=self.model)
+                resp = preprocess(request=request, instance_id=instid, Model=self.model)
                 # Let the return value of the preprocess be the new value of
                 # instid, thereby allowing the preprocess to effectively specify
                 # which instance of the model to process on.
@@ -944,8 +949,13 @@ class API(ModelView):
                 # We assume that if the preprocess returns None, it really just
                 # didn't return anything, which means we shouldn't overwrite the
                 # instid.
-                if temp_result is not None:
-                    instid = temp_result
+                
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
+                
+                if resp is not None:
+                    instid = resp
+                    
         except ProcessingException as exception:
             return response_exception(exception)
 
@@ -981,12 +991,15 @@ class API(ModelView):
             return json(dict(message='No result found'),status=520)
 
         try:
+            headers = {}
             for postprocess in self.postprocess['GET_SINGLE']:
-                postprocess(request=request, result=result, Model=self.model)
+                resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
         except ProcessingException as exception:
             return response_exception(exception)
 
-        return json(result,status=200)
+        return json(result, headers=headers, status=200)
         #return result
 
     def _delete_many(self, request):
@@ -1009,7 +1022,9 @@ class API(ModelView):
 
         try:
             for preprocess in self.preprocess['DELETE_MANY']:
-                preprocess(request=request, search_params=search_params, Model=self.model)
+                resp = preprocess(request=request, search_params=search_params, Model=self.model)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
         except ProcessingException as exception:
             return response_exception(exception)
 
@@ -1049,12 +1064,15 @@ class API(ModelView):
         result = dict(num_deleted=num_deleted)
 
         try:
+            headers = {}
             for postprocess in self.postprocess['DELETE_MANY']:
-                postprocess(request=request, result=result, search_params=search_params, Model=self.model)
+                resp = postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
         except ProcessingException as exception:
             return response_exception(exception)
 
-        return (json(result, status=200)) if num_deleted > 0 else json({},status=520)
+        return (json(result, headers=headers, status=200)) if num_deleted > 0 else json({}, headers=headers, status=520)
 
     async def delete(self, request, instid=None, relationname=None, relationinstid=None):
         """Removes the specified instance of the model with the specified name
@@ -1085,12 +1103,14 @@ class API(ModelView):
 
         try:
             for preprocess in self.preprocess['DELETE_SINGLE']:
-                temp_result = preprocess(request=request, instance_id=instid,
+                resp = preprocess(request=request, instance_id=instid,
                                            relation_name=relationname,
                                            relation_instance_id=relationinstid, Model=self.model)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
                 # See the note under the preprocess in the get() method.
-                if temp_result is not None:
-                    instid = temp_result
+                if resp is not None:
+                    instid = resp
         except ProcessingException as exception:
             return response_exception(exception)
 
@@ -1115,12 +1135,15 @@ class API(ModelView):
         self.session.commit()
 
         try:
+            headers = {}
             for postprocess in self.postprocess['DELETE_SINGLE']:
-                postprocess(request=request, was_deleted=was_deleted, Model=self.model)
+                resp = postprocess(request=request, was_deleted=was_deleted, Model=self.model, headers=headers)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
         except ProcessingException as exception:
             return response_exception(exception)
 
-        return json({},status=200) if was_deleted else json({},status=520)
+        return json({}, headers=headers, status=200) if was_deleted else json({}, headers=headers, status=520)
 
     async def post(self, request):
         """Creates a new instance of a given model based on request data.
@@ -1173,7 +1196,9 @@ class API(ModelView):
         # apply any preprocess to the POST arguments
         try:
             for preprocess in self.preprocess['POST']:
-                preprocess(request=request, data=data, Model=self.model)
+                resp = preprocess(request=request, data=data, Model=self.model)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
         except ProcessingException as exception:
             return response_exception(exception)
 
@@ -1209,12 +1234,13 @@ class API(ModelView):
         headers = dict(Location=url)
 
         try:
+            headers = {}
             for postprocess in self.postprocess['POST']:
-                postprocess(request=request, result=result, Model=self.model)
+                resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                if (resp is not None) and isinstance(resp, HTTPResponse):
+                    return resp
         except ProcessingException as exception:
             return response_exception(exception)
-
-        #return result, 201, headers
         return json(result,headers=headers, status=201)
 
     async def put(self, request, instid=None, relationname=None, relationinstid=None):
@@ -1278,17 +1304,22 @@ class API(ModelView):
             search_params = data.pop('q', {})
             try:
                 for preprocess in self.preprocess['PATCH_MANY']:
-                    preprocess(request=request, search_params=search_params, data=data, Model=self.model)
+                    resp = preprocess(request=request, search_params=search_params, data=data, Model=self.model)
+                    if (resp is not None) and isinstance(resp, HTTPResponse):
+                        return resp
             except ProcessingException as exception:
                 return response_exception(exception)
 
         else:
             for preprocess in self.preprocess['PATCH_SINGLE']:
                 try:
-                    temp_result = preprocess(request=request, instance_id=instid, data=data, Model=self.model)
+                    resp = preprocess(request=request, instance_id=instid, data=data, Model=self.model)
+                    
+                    if (resp is not None) and isinstance(resp, HTTPResponse):
+                        return resp
                     # See the note under the preprocess in the get() method.
-                    if temp_result is not None:
-                        instid = temp_result
+                    if resp is not None:
+                        instid = resp
                 except ProcessingException as exception:
                     return response_exception(exception)
 
@@ -1339,13 +1370,15 @@ class API(ModelView):
             return self._handle_validation_exception(exception)
 
         # Perform any necessary postprocessing.
+        headers = {}
         if patchmany:
             result = dict(num_modified=num_modified)
-
             try:
                 for postprocess in self.postprocess['PATCH_MANY']:
-                    postprocess(request=request, query=query, result=result,
-                              search_params=search_params, Model=self.model)
+                    resp = postprocess(request=request, query=query, result=result,
+                              search_params=search_params, Model=self.model, headers=headers)
+                    if (resp is not None) and isinstance(resp, HTTPResponse):
+                        return resp
             except ProcessingException as exception:
                 return response_exception(exception)
 
@@ -1354,11 +1387,13 @@ class API(ModelView):
 
             try:
                 for postprocess in self.postprocess['PATCH_SINGLE']:
-                    postprocess(request=request, result=result, Model=self.model)
+                    resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                    if (resp is not None) and isinstance(resp, HTTPResponse):
+                        return resp
             except ProcessingException as exception:
                 return response_exception(exception)
 
-        return json(result, status=200)
+        return json(result, headers=headers, status=200)
 
     async def patch(self, *args, **kw):
         """Alias for :meth:`patch`."""
