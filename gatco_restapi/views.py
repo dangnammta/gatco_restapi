@@ -818,7 +818,7 @@ class API(ModelView):
 
 
 
-    def _search(self, request):
+    async def _search(self, request):
         try:
             search_params = json_loads(request.args.get('q', '{}'))
         except (TypeError, ValueError, OverflowError) as exception:
@@ -944,7 +944,7 @@ class API(ModelView):
         """
 
         if instid is None:
-            return self._search(request)
+            return await self._search(request)
 
         try:
             for preprocess in self.preprocess['GET_SINGLE']:
@@ -1016,7 +1016,7 @@ class API(ModelView):
         return json(result, headers=headers, status=200)
         #return result
 
-    def _delete_many(self, request):
+    async def _delete_many(self, request):
         """Deletes multiple instances of the model.
 
         If search parameters are provided via the ``q`` query parameter, only
@@ -1119,7 +1119,7 @@ class API(ModelView):
             # If no instance ID is provided, this request is an attempt to
             # delete many instances of the model via a search with possible
             # filters.
-            return self._delete_many(request)
+            return await self._delete_many(request)
         was_deleted = False
 
         try:
