@@ -1,5 +1,4 @@
-from __future__ import division
-
+import asyncio
 from collections import defaultdict
 from functools import wraps
 import math
@@ -828,7 +827,11 @@ class API(ModelView):
 
         try:
             for preprocess in self.preprocess['GET_MANY']:
-                resp = preprocess(request=request,search_params=search_params, Model=self.model)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await preprocess(request=request,search_params=search_params, Model=self.model)
+                else:
+                    resp = preprocess(request=request,search_params=search_params, Model=self.model)
+                
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
         except ProcessingException as exception:
@@ -908,7 +911,11 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['GET_MANY']:
-                resp = postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
+                else:
+                    resp = postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
+                
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
         except ProcessingException as exception:
@@ -941,7 +948,10 @@ class API(ModelView):
 
         try:
             for preprocess in self.preprocess['GET_SINGLE']:
-                resp = preprocess(request=request, instance_id=instid, Model=self.model)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await preprocess(request=request, instance_id=instid, Model=self.model)
+                else:
+                    resp = preprocess(request=request, instance_id=instid, Model=self.model)
                 # Let the return value of the preprocess be the new value of
                 # instid, thereby allowing the preprocess to effectively specify
                 # which instance of the model to process on.
@@ -993,7 +1003,11 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['GET_SINGLE']:
-                resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await postprocess(request=request, result=result, Model=self.model, headers=headers)
+                else:
+                    resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
         except ProcessingException as exception:
@@ -1022,7 +1036,11 @@ class API(ModelView):
 
         try:
             for preprocess in self.preprocess['DELETE_MANY']:
-                resp = preprocess(request=request, search_params=search_params, Model=self.model)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await preprocess(request=request,search_params=search_params, Model=self.model)
+                else:
+                    resp = preprocess(request=request, search_params=search_params, Model=self.model)
+                
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
         except ProcessingException as exception:
@@ -1066,7 +1084,10 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['DELETE_MANY']:
-                resp = postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
+                else:
+                    resp = postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
         except ProcessingException as exception:
@@ -1103,9 +1124,15 @@ class API(ModelView):
 
         try:
             for preprocess in self.preprocess['DELETE_SINGLE']:
-                resp = preprocess(request=request, instance_id=instid,
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await preprocess(request=request, instance_id=instid,
                                            relation_name=relationname,
                                            relation_instance_id=relationinstid, Model=self.model)
+                else:
+                    resp = preprocess(request=request, instance_id=instid,
+                                           relation_name=relationname,
+                                           relation_instance_id=relationinstid, Model=self.model)
+                
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
                 # See the note under the preprocess in the get() method.
@@ -1138,6 +1165,11 @@ class API(ModelView):
             headers = {}
             for postprocess in self.postprocess['DELETE_SINGLE']:
                 resp = postprocess(request=request, was_deleted=was_deleted, Model=self.model, headers=headers)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await postprocess(request=request, was_deleted=was_deleted, Model=self.model, headers=headers)
+                else:
+                    resp = postprocess(request=request, was_deleted=was_deleted, Model=self.model, headers=headers)
+                    
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
         except ProcessingException as exception:
@@ -1196,7 +1228,11 @@ class API(ModelView):
         # apply any preprocess to the POST arguments
         try:
             for preprocess in self.preprocess['POST']:
-                resp = preprocess(request=request, data=data, Model=self.model)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await preprocess(request=request, data=data, Model=self.model)
+                else:
+                    resp = preprocess(request=request, data=data, Model=self.model)
+                    
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
         except ProcessingException as exception:
@@ -1236,7 +1272,11 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['POST']:
-                resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                if asyncio.iscoroutinefunction(preprocess):
+                    resp = await postprocess(request=request, result=result, Model=self.model, headers=headers)
+                else:
+                    resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                
                 if (resp is not None) and isinstance(resp, HTTPResponse):
                     return resp
         except ProcessingException as exception:
@@ -1304,7 +1344,11 @@ class API(ModelView):
             search_params = data.pop('q', {})
             try:
                 for preprocess in self.preprocess['PATCH_MANY']:
-                    resp = preprocess(request=request, search_params=search_params, data=data, Model=self.model)
+                    if asyncio.iscoroutinefunction(preprocess):
+                        resp = await preprocess(request=request, search_params=search_params, data=data, Model=self.model)
+                    else:
+                        resp = preprocess(request=request, search_params=search_params, data=data, Model=self.model)
+                    
                     if (resp is not None) and isinstance(resp, HTTPResponse):
                         return resp
             except ProcessingException as exception:
@@ -1313,7 +1357,10 @@ class API(ModelView):
         else:
             for preprocess in self.preprocess['PATCH_SINGLE']:
                 try:
-                    resp = preprocess(request=request, instance_id=instid, data=data, Model=self.model)
+                    if asyncio.iscoroutinefunction(preprocess):
+                        resp = await preprocess(request=request, instance_id=instid, data=data, Model=self.model)
+                    else:
+                        resp = preprocess(request=request, instance_id=instid, data=data, Model=self.model)
                     
                     if (resp is not None) and isinstance(resp, HTTPResponse):
                         return resp
@@ -1375,8 +1422,13 @@ class API(ModelView):
             result = dict(num_modified=num_modified)
             try:
                 for postprocess in self.postprocess['PATCH_MANY']:
-                    resp = postprocess(request=request, query=query, result=result,
+                    if asyncio.iscoroutinefunction(preprocess):
+                        resp = await postprocess(request=request, query=query, result=result,
                               search_params=search_params, Model=self.model, headers=headers)
+                    else:
+                        resp = postprocess(request=request, query=query, result=result,
+                              search_params=search_params, Model=self.model, headers=headers)
+                        
                     if (resp is not None) and isinstance(resp, HTTPResponse):
                         return resp
             except ProcessingException as exception:
@@ -1387,7 +1439,11 @@ class API(ModelView):
 
             try:
                 for postprocess in self.postprocess['PATCH_SINGLE']:
-                    resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                    if asyncio.iscoroutinefunction(preprocess):
+                        resp = await postprocess(request=request, result=result, Model=self.model, headers=headers)
+                    else:
+                        resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
+                        
                     if (resp is not None) and isinstance(resp, HTTPResponse):
                         return resp
             except ProcessingException as exception:
