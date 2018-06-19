@@ -911,7 +911,7 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['GET_MANY']:
-                if asyncio.iscoroutinefunction(preprocess):
+                if asyncio.iscoroutinefunction(postprocess):
                     resp = await postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
                 else:
                     resp = postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
@@ -1003,7 +1003,7 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['GET_SINGLE']:
-                if asyncio.iscoroutinefunction(preprocess):
+                if asyncio.iscoroutinefunction(postprocess):
                     resp = await postprocess(request=request, result=result, Model=self.model, headers=headers)
                 else:
                     resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
@@ -1084,7 +1084,7 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['DELETE_MANY']:
-                if asyncio.iscoroutinefunction(preprocess):
+                if asyncio.iscoroutinefunction(postprocess):
                     resp = await postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
                 else:
                     resp = postprocess(request=request, result=result, search_params=search_params, Model=self.model, headers=headers)
@@ -1164,8 +1164,7 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['DELETE_SINGLE']:
-                resp = postprocess(request=request, was_deleted=was_deleted, Model=self.model, headers=headers)
-                if asyncio.iscoroutinefunction(preprocess):
+                if asyncio.iscoroutinefunction(postprocess):
                     resp = await postprocess(request=request, was_deleted=was_deleted, Model=self.model, headers=headers)
                 else:
                     resp = postprocess(request=request, was_deleted=was_deleted, Model=self.model, headers=headers)
@@ -1272,7 +1271,7 @@ class API(ModelView):
         try:
             headers = {}
             for postprocess in self.postprocess['POST']:
-                if asyncio.iscoroutinefunction(preprocess):
+                if asyncio.iscoroutinefunction(postprocess):
                     resp = await postprocess(request=request, result=result, Model=self.model, headers=headers)
                 else:
                     resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
@@ -1422,7 +1421,7 @@ class API(ModelView):
             result = dict(num_modified=num_modified)
             try:
                 for postprocess in self.postprocess['PATCH_MANY']:
-                    if asyncio.iscoroutinefunction(preprocess):
+                    if asyncio.iscoroutinefunction(postprocess):
                         resp = await postprocess(request=request, query=query, result=result,
                               search_params=search_params, Model=self.model, headers=headers)
                     else:
@@ -1439,7 +1438,7 @@ class API(ModelView):
 
             try:
                 for postprocess in self.postprocess['PATCH_SINGLE']:
-                    if asyncio.iscoroutinefunction(preprocess):
+                    if asyncio.iscoroutinefunction(postprocess):
                         resp = await postprocess(request=request, result=result, Model=self.model, headers=headers)
                     else:
                         resp = postprocess(request=request, result=result, Model=self.model, headers=headers)
