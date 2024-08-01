@@ -838,7 +838,7 @@ class API(ModelView):
             return response_exception(exception)
 
 
-        print("TODO: datatime in paramstring - gatco_restapi views line 1146")
+        # print("TODO: datatime in paramstring - gatco_restapi views line 1146")
         # resolve date-strings as required by the model
         '''for param in search_params.get('filters', list()):
             if 'name' in param and 'val' in param:
