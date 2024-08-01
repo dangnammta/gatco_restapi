@@ -1,16 +1,3 @@
-"""
-    gonrin_restapi.helpers
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    Helper functions for Gonrin_RestAPI.
-
-    :copyright: 2012, 2013, 2014, 2015 Jeffrey Finkelstein
-                <jeffrey.finkelstein@gmail.com> and contributors.
-    :copyright: 2016 Cuong Nguyen Cao
-                <cuongnc.coder@gmail.com> and contributors.
-    :license: MIT
-
-"""
 import datetime
 import inspect
 import uuid
@@ -326,7 +313,7 @@ def to_dict(instance, deep=None, exclude=None, include=None,
         column_attrs = inspected_instance.column_attrs.keys()
         descriptors = inspected_instance.all_orm_descriptors.items()
         hybrid_columns = [k for k, d in descriptors
-                          if d.extension_type == hybrid.HYBRID_PROPERTY
+                          if d.extension_type == hybrid_property
                           and not (deep and k in deep)]
         columns = column_attrs + hybrid_columns
     except NoInspectionAvailable:
