@@ -19,6 +19,8 @@ from sqlalchemy.orm.query import Query
 from sqlalchemy.sql import func
 from sqlalchemy.sql.expression import ColumnElement
 from sqlalchemy.inspection import inspect as sqlalchemy_inspect
+from sqlalchemy import __version__ as sa_version
+from distutils.version import LooseVersion
 
 #: Names of attributes which should definitely not be considered relations when
 #: dynamically computing a list of relations of a SQLAlchemy model.
@@ -586,12 +588,28 @@ def count(session, query):
     queries.
 
     """
-    counts = query.selectable.with_only_columns([func.count()])
-    num_results = session.execute(counts.order_by(None)).scalar()
-    if num_results is None or query.limit:
+    try:
+        # Handle different SQLAlchemy versions
+        if LooseVersion(sa_version) >= LooseVersion('2.0.0'):
+            # SQLAlchemy 2.0+ approach
+            counts = query.selectable.with_only_columns(func.count())
+            num_results = session.execute(counts.order_by(None)).scalar()
+            if num_results is None or query.limit:
+                return query.count()
+            return num_results
+            
+        else:
+            counts = query.selectable.with_only_columns([func.count()])
+            num_results = session.execute(counts.order_by(None)).scalar()
+            if num_results is None or query.limit:
+                return query.count()
+            return num_results
+        
+    except Exception as e:
+        # Log the error if you have logging configured
+        print(f"Error counting records: {str(e)}")
+        # Fallback to standard count() method
         return query.count()
-    return num_results
-
 
 # This code comes from <http://stackoverflow.com/a/6798042/108197>, which is
 # licensed under the Creative Commons Attribution-ShareAlike License version
